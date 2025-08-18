@@ -1,0 +1,318 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Guess the Celebrity! (Minimal, Add or Play)</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #fff; text-align: center; padding-top: 40px; }
+    button, textarea, input[type="text"] { font-size: 1.1em; margin: 10px; padding: 10px 25px; }
+    #question, #result { margin: 25px 0; font-size: 1.3em; }
+    #importArea { margin: 30px 0; }
+    textarea { width: 90%; max-width: 700px; height: 120px; }
+    #mainMenu { margin: 30px 0; }
+    #addArea { margin: 30px 0; }
+    #wikiStatus { color: #ff0; }
+  </style>
+</head>
+<body>
+  <h1>Guess the Celebrity!</h1>
+  <div id="mainMenu">
+    <button onclick="startGame()">Play Game</button>
+    <button onclick="showAddCelebrity()">Add Celebrity</button>
+  </div>
+  <div id="gameArea" style="display:none;">
+    <div id="question"></div>
+    <div id="answerBtns">
+      <button onclick="answer('yes')">Yes</button>
+      <button onclick="answer('no')">No</button>
+    </div>
+    <div id="result" style="display:none"></div>
+    <button onclick="backToMenu()">Back to Menu</button>
+  </div>
+  <div id="addArea" style="display:none;">
+    <h3>Add Celebrity by Name (Wikipedia)</h3>
+    <input type="text" id="wikiName" placeholder="Type celebrity name...">
+    <button onclick="addCelebrityFromWiki()">Add</button>
+    <span id="wikiStatus"></span><br>
+    <button onclick="backToMenu()">Back to Menu</button>
+  </div>
+  <div id="importArea">
+    <h3>Import More Questions/Celebrities</h3>
+    <textarea id="importText" placeholder="Paste import segment here..."></textarea><br>
+    <button onclick="importData()">Import</button>
+    <button onclick="clearImports()" style="background:#a00;color:#fff;">Clear All Imports</button>
+    <span id="importStatus"></span>
+    <div style="color:#aaa;font-size:0.95em;margin-top:10px;">
+      <b>Tip:</b> To patch a branch, use:<br>
+      <code>{"patch": {"node": 2, "branch": "yes"}, "q": "Is he Tom Hanks?", "yes": "Tom Hanks", "no": null}</code>
+    </div>
+  </div>
+  <script>
+    // --- MINIMAL BASE TREE: 3 layers/questions, no built-in answers ---
+    let builtInQuestions = [
+      { q: "Are they male?", yes: 1, no: 2 },
+      { q: "Are they an actor?", yes: 3, no: 4 },
+      { q: "Are they an actor?", yes: 5, no: 6 },
+      { q: "Are they American?", yes: null, no: null },
+      { q: "Are they American?", yes: null, no: null },
+      { q: "Are they American?", yes: null, no: null },
+      { q: "Are they American?", yes: null, no: null }
+    ];
+
+    // --- PERSISTENT IMPORTS ---
+    const LS_KEY = "celebrityGameImportsV6";
+    let importedQuestions = [];
+    let importedPatches = [];
+
+    function loadImports() {
+      let raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        try {
+          let obj = JSON.parse(raw);
+          if (obj && Array.isArray(obj.questions) && Array.isArray(obj.patches)) {
+            importedQuestions = obj.questions;
+            importedPatches = obj.patches;
+          }
+        } catch (e) {
+          importedQuestions = [];
+          importedPatches = [];
+        }
+      }
+    }
+    function saveImports() {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        questions: importedQuestions,
+        patches: importedPatches
+      }));
+    }
+    function clearImports() {
+      if (confirm("Are you sure you want to remove all imported questions/celebrities?")) {
+        importedQuestions = [];
+        importedPatches = [];
+        saveImports();
+        document.getElementById('importStatus').textContent = "All imports cleared. Reloading game...";
+        setTimeout(() => location.reload(), 1000);
+      }
+    }
+    let questions = [];
+    function buildQuestions() {
+      questions = builtInQuestions.map(q => q === null ? null : JSON.parse(JSON.stringify(q)));
+      let baseLen = questions.length;
+      for (let i = 0; i < importedQuestions.length; ++i) {
+        let node = JSON.parse(JSON.stringify(importedQuestions[i]));
+        if (typeof node === "object") {
+          if (typeof node.yes === "number") node.yes += baseLen;
+          if (typeof node.no === "number") node.no += baseLen;
+        }
+        questions.push(node);
+      }
+      for (let i = 0; i < importedPatches.length; ++i) {
+        let patch = importedPatches[i];
+        if (
+          patch &&
+          typeof patch.node === "number" &&
+          (patch.branch === "yes" || patch.branch === "no") &&
+          (typeof patch.target === "number" || typeof patch.target === "string") &&
+          questions[patch.node]
+        ) {
+          questions[patch.node][patch.branch] = patch.target;
+        }
+      }
+    }
+
+    // --- UI State ---
+    function showMainMenu() {
+      document.getElementById('mainMenu').style.display = '';
+      document.getElementById('gameArea').style.display = 'none';
+      document.getElementById('addArea').style.display = 'none';
+    }
+    function startGame() {
+      document.getElementById('mainMenu').style.display = 'none';
+      document.getElementById('gameArea').style.display = '';
+      document.getElementById('addArea').style.display = 'none';
+      current = 0;
+      gameOver = false;
+      showQuestion();
+    }
+    function showAddCelebrity() {
+      document.getElementById('mainMenu').style.display = 'none';
+      document.getElementById('gameArea').style.display = 'none';
+      document.getElementById('addArea').style.display = '';
+      document.getElementById('wikiStatus').textContent = '';
+      document.getElementById('wikiName').value = '';
+    }
+    function backToMenu() {
+      showMainMenu();
+    }
+
+    // --- GAME LOGIC ---
+    let current = 0;
+    let gameOver = false;
+    function showQuestion() {
+      if (gameOver) return;
+      let q = questions[current];
+      if (!q) {
+        document.getElementById('question').innerHTML = "No celebrities in this branch yet!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "<button onclick='backToMenu()'>Back to Menu</button>";
+        return;
+      }
+      if (typeof q === "string") {
+        document.getElementById('question').innerHTML = "You are thinking of <b>" + q + "</b>!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "Thanks for playing!<br><br><button onclick='backToMenu()'>Back to Menu</button>";
+        gameOver = true;
+      } else {
+        document.getElementById('question').textContent = q.q;
+        document.getElementById('answerBtns').style.display = '';
+        document.getElementById('result').style.display = 'none';
+      }
+    }
+    function answer(ans) {
+      if (gameOver) return;
+      let q = questions[current];
+      let next = q[ans];
+      if (next === null || next === undefined) {
+        document.getElementById('question').innerHTML = "No celebrities in this branch yet!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "<button onclick='backToMenu()'>Back to Menu</button>";
+        return;
+      }
+      if (typeof next === "string") {
+        document.getElementById('question').innerHTML = "You are thinking of <b>" + next + "</b>!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "Thanks for playing!<br><br><button onclick='backToMenu()'>Back to Menu</button>";
+        gameOver = true;
+      } else {
+        current = next;
+        showQuestion();
+      }
+    }
+
+    // --- IMPORT FEATURE (supports patching) ---
+    function importData() {
+      let importText = document.getElementById('importText').value.trim();
+      let status = document.getElementById('importStatus');
+      try {
+        let imported = JSON.parse(importText);
+        if (!Array.isArray(imported)) throw "Import must be an array of nodes.";
+        let baseLen = builtInQuestions.length + importedQuestions.length;
+        let newPatches = [];
+        for (let i = 0; i < imported.length; ++i) {
+          let node = imported[i];
+          if (node.patch) {
+            let patchNode = node.patch.node;
+            let patchBranch = node.patch.branch;
+            delete node.patch;
+            importedQuestions.push(node);
+            let newNodeIndex = builtInQuestions.length + importedQuestions.length - 1;
+            newPatches.push({ node: patchNode, branch: patchBranch, target: newNodeIndex });
+          } else {
+            importedQuestions.push(node);
+          }
+        }
+        importedPatches = importedPatches.concat(newPatches);
+        saveImports();
+        buildQuestions();
+        status.textContent = "Import successful! " + imported.length + " nodes added.";
+        status.style.color = "lime";
+      } catch (e) {
+        status.textContent = "Import failed: " + e;
+        status.style.color = "red";
+      }
+    }
+
+    // --- WIKIPEDIA AUTO-ADD FEATURE (top result only) ---
+    async function addCelebrityFromWiki() {
+      const name = document.getElementById('wikiName').value.trim();
+      const status = document.getElementById('wikiStatus');
+      if (!name) {
+        status.textContent = "Please enter a name.";
+        return;
+      }
+      status.textContent = "Searching Wikipedia...";
+      try {
+        // Search for top result
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name)}&utf8=&format=json&origin=*`;
+        const searchResp = await fetch(searchUrl);
+        const searchData = await searchResp.json();
+        if (!searchData.query || !searchData.query.search || searchData.query.search.length === 0) {
+          status.textContent = "No results found.";
+          return;
+        }
+        const title = searchData.query.search[0].title;
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+        const summaryResp = await fetch(summaryUrl);
+        if (!summaryResp.ok) throw new Error("Not found");
+        const summaryData = await summaryResp.json();
+        // Try to get occupation and gender from description
+        let occupation = "";
+        let gender = "";
+        let description = (summaryData.description || "").toLowerCase();
+        if (description.includes("actor") || description.includes("actress")) occupation = "actor";
+        else if (description.includes("singer")) occupation = "singer";
+        else if (description.includes("musician")) occupation = "musician";
+        else if (description.includes("athlete") || description.includes("basketball") || description.includes("football") || description.includes("soccer") || description.includes("tennis") || description.includes("gymnast")) occupation = "athlete";
+        else if (description.includes("politician") || description.includes("president")) occupation = "politician";
+        else if (description.includes("scientist") || description.includes("physicist")) occupation = "scientist";
+        else if (description.includes("comedian")) occupation = "comedian";
+        else if (description.includes("writer") || description.includes("author")) occupation = "writer";
+        else if (description.includes("model")) occupation = "model";
+        else occupation = "celebrity";
+        if (description.includes("female") || description.includes("actress") || description.includes("she")) gender = "female";
+        else gender = "male";
+        // The base tree is: 0: male? 1: male-actor? 2: female-actor? 3: male-actor-american? 4: male-not-actor-american? 5: female-actor-american? 6: female-not-actor-american?
+        let patch = null;
+        let q = "";
+        let yes = title;
+        let no = null;
+        if (gender === "male") {
+          if (occupation === "actor") {
+            patch = { node: 3, branch: "yes" };
+            q = `Is he ${title}?`;
+            no = null;
+          } else {
+            patch = { node: 4, branch: "yes" };
+            q = `Is he ${title}?`;
+            no = null;
+          }
+        } else {
+          if (occupation === "actor") {
+            patch = { node: 5, branch: "yes" };
+            q = `Is she ${title}?`;
+            no = null;
+          } else {
+            patch = { node: 6, branch: "yes" };
+            q = `Is she ${title}?`;
+            no = null;
+          }
+        }
+        if (!patch || !q) {
+          status.textContent = "Could not determine where to add this celebrity.";
+          return;
+        }
+        const newNode = { q, yes, no };
+        importedQuestions.push(newNode);
+        let newNodeIndex = builtInQuestions.length + importedQuestions.length - 1;
+        importedPatches.push({ node: patch.node, branch: patch.branch, target: newNodeIndex });
+        saveImports();
+        buildQuestions();
+        status.textContent = `Added ${title} as a ${occupation}.`;
+        status.style.color = "lime";
+      } catch (e) {
+        status.textContent = "Could not find or add this celebrity.";
+        status.style.color = "red";
+      }
+    }
+
+    // --- INIT ---
+    loadImports();
+    buildQuestions();
+    showMainMenu();
+  </script>
+</body>
+</html>

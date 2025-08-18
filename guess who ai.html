@@ -1,0 +1,198 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Guess the Celebrity! (Importable & Persistent)</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #fff; text-align: center; padding-top: 40px; }
+    button, textarea { font-size: 1.1em; margin: 10px; padding: 10px 25px; }
+    #question, #result { margin: 25px 0; font-size: 1.3em; }
+    #importArea { margin: 30px 0; }
+    textarea { width: 90%; max-width: 700px; height: 120px; }
+  </style>
+</head>
+<body>
+  <h1>Guess the Celebrity!</h1>
+  <div id="question"></div>
+  <div id="answerBtns">
+    <button onclick="answer('yes')">Yes</button>
+    <button onclick="answer('no')">No</button>
+  </div>
+  <div id="result" style="display:none"></div>
+  <div id="importArea">
+    <h3>Import More Questions/Celebrities</h3>
+    <textarea id="importText" placeholder="Paste import segment here..."></textarea><br>
+    <button onclick="importData()">Import</button>
+    <button onclick="clearImports()" style="background:#a00;color:#fff;">Clear All Imports</button>
+    <span id="importStatus"></span>
+    <div style="color:#aaa;font-size:0.95em;margin-top:10px;">
+      <b>Tip:</b> To patch a branch, use:<br>
+      <code>{"patch": {"node": 4, "branch": "no"}, "q": "Is he David Bowie?", "yes": "David Bowie", "no": "Ed Sheeran"}</code>
+    </div>
+  </div>
+  <script>
+    // --- BUILT-IN TREE (minimal, error-free) ---
+    let builtInQuestions = [
+      { q: "Is the person male?", yes: 1, no: 6 },
+      // MALE BRANCH
+      { q: "Is he an actor?", yes: 2, no: 4 },
+      { q: "Is he known for action movies?", yes: 3, no: 5 },
+      { q: "Is he Tom Cruise?", yes: "Tom Cruise", no: "Leonardo DiCaprio" },
+      { q: "Is he a famous musician?", yes: "Ed Sheeran", no: "Cristiano Ronaldo" },
+      { q: "Is he a scientist?", yes: "Albert Einstein", no: "Barack Obama" },
+      // FEMALE BRANCH
+      { q: "Is she an actress?", yes: 7, no: 9 },
+      { q: "Is she known for action movies?", yes: 8, no: 10 },
+      { q: "Is she Scarlett Johansson?", yes: "Scarlett Johansson", no: "Meryl Streep" },
+      { q: "Is she a famous singer?", yes: 11, no: 12 },
+      { q: "Is she Taylor Swift?", yes: "Taylor Swift", no: "Adele" },
+      { q: "Is she a sportswoman?", yes: "Serena Williams", no: "Malala Yousafzai" }
+    ];
+
+    // --- PERSISTENT IMPORTS ---
+    const LS_KEY = "celebrityGameImportsV3";
+    let importedQuestions = [];
+    let importedPatches = [];
+
+    // Load imports from localStorage
+    function loadImports() {
+      let raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        try {
+          let obj = JSON.parse(raw);
+          if (obj && Array.isArray(obj.questions) && Array.isArray(obj.patches)) {
+            importedQuestions = obj.questions;
+            importedPatches = obj.patches;
+          }
+        } catch (e) {
+          importedQuestions = [];
+          importedPatches = [];
+        }
+      }
+    }
+
+    // Save imports to localStorage
+    function saveImports() {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        questions: importedQuestions,
+        patches: importedPatches
+      }));
+    }
+
+    // Clear all imports
+    function clearImports() {
+      if (confirm("Are you sure you want to remove all imported questions/celebrities?")) {
+        importedQuestions = [];
+        importedPatches = [];
+        saveImports();
+        document.getElementById('importStatus').textContent = "All imports cleared. Reloading game...";
+        setTimeout(() => location.reload(), 1000);
+      }
+    }
+
+    // --- GAME DATA (built-in + imports) ---
+    let questions = [];
+    function buildQuestions() {
+      // Start with built-in
+      questions = builtInQuestions.slice();
+      // Add imported questions
+      let baseLen = questions.length;
+      for (let i = 0; i < importedQuestions.length; ++i) {
+        let node = JSON.parse(JSON.stringify(importedQuestions[i])); // deep copy
+        if (typeof node === "object") {
+          if (typeof node.yes === "number") node.yes += baseLen;
+          if (typeof node.no === "number") node.no += baseLen;
+        }
+        questions.push(node);
+      }
+      // Apply patches
+      for (let i = 0; i < importedPatches.length; ++i) {
+        let patch = importedPatches[i];
+        if (
+          patch &&
+          typeof patch.node === "number" &&
+          (patch.branch === "yes" || patch.branch === "no") &&
+          typeof patch.target === "number" &&
+          questions[patch.node]
+        ) {
+          questions[patch.node][patch.branch] = patch.target;
+        }
+      }
+    }
+
+    // --- GAME LOGIC ---
+    let current = 0;
+    let gameOver = false;
+
+    function showQuestion() {
+      if (gameOver) return;
+      let q = questions[current];
+      if (typeof q === "string") {
+        document.getElementById('question').innerHTML = "You are thinking of <b>" + q + "</b>!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "Thanks for playing!<br><br><button onclick='location.reload()'>Play Again</button>";
+        gameOver = true;
+      } else {
+        document.getElementById('question').textContent = q.q;
+      }
+    }
+
+    function answer(ans) {
+      if (gameOver) return;
+      let next = questions[current][ans];
+      if (typeof next === "string") {
+        document.getElementById('question').innerHTML = "You are thinking of <b>" + next + "</b>!";
+        document.getElementById('answerBtns').style.display = "none";
+        document.getElementById('result').style.display = "";
+        document.getElementById('result').innerHTML = "Thanks for playing!<br><br><button onclick='location.reload()'>Play Again</button>";
+        gameOver = true;
+      } else {
+        current = next;
+        showQuestion();
+      }
+    }
+
+    // --- IMPORT FEATURE (supports patching) ---
+    function importData() {
+      let importText = document.getElementById('importText').value.trim();
+      let status = document.getElementById('importStatus');
+      try {
+        let imported = JSON.parse(importText);
+        if (!Array.isArray(imported)) throw "Import must be an array of nodes.";
+        let baseLen = builtInQuestions.length + importedQuestions.length;
+        let newPatches = [];
+        for (let i = 0; i < imported.length; ++i) {
+          let node = imported[i];
+          if (node.patch) {
+            // Patch an existing node's branch to point to this new node
+            let patchNode = node.patch.node;
+            let patchBranch = node.patch.branch;
+            // Remove patch info before pushing
+            delete node.patch;
+            importedQuestions.push(node);
+            let newNodeIndex = builtInQuestions.length + importedQuestions.length - 1;
+            newPatches.push({ node: patchNode, branch: patchBranch, target: newNodeIndex });
+          } else {
+            // Normal import, just append
+            importedQuestions.push(node);
+          }
+        }
+        importedPatches = importedPatches.concat(newPatches);
+        saveImports();
+        buildQuestions();
+        status.textContent = "Import successful! " + imported.length + " nodes added.";
+        status.style.color = "lime";
+      } catch (e) {
+        status.textContent = "Import failed: " + e;
+        status.style.color = "red";
+      }
+    }
+
+    // --- INIT ---
+    loadImports();
+    buildQuestions();
+    showQuestion();
+  </script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Guess the Celebrity! (AI or 2-Player)</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #fff; text-align: center; padding-top: 40px; }
+    button, input[type="text"] { font-size: 1.1em; margin: 10px; padding: 10px 25px; }
+    #question, #turn, #result, #modeSelect, #inputArea { margin: 25px 0; font-size: 1.3em; }
+    #inputArea input { margin: 10px; }
+    #guessArea { margin: 20px 0; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Guess the Celebrity!</h1>
+  <div id="modeSelect">
+    <button onclick="startAIMode()">Play vs AI</button>
+    <button onclick="startTwoPlayer()">2 Player</button>
+  </div>
+  <div id="inputArea" class="hidden"></div>
+  <div id="turn" class="hidden"></div>
+  <div id="question" class="hidden"></div>
+  <div id="answerBtns" class="hidden">
+    <button onclick="answer('yes')">Yes</button>
+    <button onclick="answer('no')">No</button>
+  </div>
+  <div id="guessArea" class="hidden">
+    <input type="text" id="guessInput" placeholder="Your guess...">
+    <button onclick="makeGuess()">Guess</button>
+  </div>
+  <div id="result" class="hidden"></div>
+  <script>
+    // --- AI MODE DATA ---
+    // Expanded questions and celebrities
+    const aiQuestions = [
+      { q: "Is the person male?", yes: 1, no: 10 },
+      { q: "Is he an actor?", yes: 2, no: 6 },
+      { q: "Is he known for action movies?", yes: 3, no: 4 },
+      { q: "Is he from the movie 'Terminator'?", yes: "Arnold Schwarzenegger", no: 5 },
+      { q: "Is he British?", yes: "Daniel Craig", no: "Leonardo DiCaprio" },
+      { q: "Is he a comedian?", yes: "Kevin Hart", no: "Barack Obama" },
+      { q: "Is he a singer?", yes: 7, no: 8 },
+      { q: "Is he Canadian?", yes: "Justin Bieber", no: "Ed Sheeran" },
+      { q: "Is he a sportsman?", yes: "Cristiano Ronaldo", no: 9 },
+      { q: "Is he a scientist?", yes: "Albert Einstein", no: "Elon Musk" },
+      { q: "Is she an actress?", yes: 11, no: 15 },
+      { q: "Is she American?", yes: 12, no: 13 },
+      { q: "Has she won an Oscar?", yes: "Meryl Streep", no: 14 },
+      { q: "Is she known for action movies?", yes: "Scarlett Johansson", no: "Jennifer Aniston" },
+      { q: "Is she a singer?", yes: 16, no: 17 },
+      { q: "Is she British?", yes: "Adele", no: 18 },
+      { q: "Is she a talk show host?", yes: "Oprah Winfrey", no: 19 },
+      { q: "Is she a comedian?", yes: "Ellen DeGeneres", no: "Taylor Swift" },
+      { q: "Is she a royal?", yes: "Queen Elizabeth II", no: "Serena Williams" }
+    ];
+
+    // --- GAME STATE ---
+    let mode = null; // "ai" or "2p"
+    let aiCurrent = 0;
+    let aiActive = false;
+
+    // 2 Player state
+    let playerNames = ["Player 1", "Player 2"];
+    let playerCelebs = ["", ""];
+    let currentPlayer = 0;
+    let otherPlayer = 1;
+    let twoPState = "input1"; // input1, input2, play
+    let twoPGuessed = false;
+
+    // --- MODE SELECTION ---
+    function startAIMode() {
+      mode = "ai";
+      document.getElementById('modeSelect').classList.add('hidden');
+      document.getElementById('result').classList.add('hidden');
+      aiCurrent = 0;
+      aiActive = true;
+      showAIQuestion();
+    }
+
+    function startTwoPlayer() {
+      mode = "2p";
+      document.getElementById('modeSelect').classList.add('hidden');
+      document.getElementById('result').classList.add('hidden');
+      twoPState = "input1";
+      playerCelebs = ["", ""];
+      currentPlayer = 0;
+      otherPlayer = 1;
+      showPlayerInput();
+    }
+
+    // --- AI MODE LOGIC ---
+    function showAIQuestion() {
+      document.getElementById('inputArea').classList.add('hidden');
+      document.getElementById('turn').classList.add('hidden');
+      document.getElementById('guessArea').classList.add('hidden');
+      document.getElementById('question').classList.remove('hidden');
+      document.getElementById('answerBtns').classList.remove('hidden');
+      let q = aiQuestions[aiCurrent];
+      if (typeof q === "string") {
+        document.getElementById('question').innerHTML = "You are thinking of <b>" + q + "</b>!";
+        document.getElementById('answerBtns').classList.add('hidden');
+        document.getElementById('result').classList.remove('hidden');
+        document.getElementById('result').innerHTML = "Thanks for playing! <br><br><button onclick='location.reload()'>Play Again</button>";
+        aiActive = false;
+      } else {
+        document.getElementById('question').textContent = q.q;
+      }
+    }
+    function answer(ans) {
+      if (mode === "ai" && aiActive) {
+        let next = aiQuestions[aiCurrent][ans];
+        if (typeof next === "string") {
+          document.getElementById('question').innerHTML = "You are thinking of <b>" + next + "</b>!";
+          document.getElementById('answerBtns').classList.add('hidden');
+          document.getElementById('result').classList.remove('hidden');
+          document.getElementById('result').innerHTML = "Thanks for playing! <br><br><button onclick='location.reload()'>Play Again</button>";
+          aiActive = false;
+        } else {
+          aiCurrent = next;
+          showAIQuestion();
+        }
+      } else if (mode === "2p" && twoPState === "play") {
+        // Switch turn after answer
+        currentPlayer = 1 - currentPlayer;
+        otherPlayer = 1 - otherPlayer;
+        showTwoPPlay();
+      }
+    }
+
+    // --- TWO PLAYER LOGIC ---
+    function showPlayerInput() {
+      document.getElementById('inputArea').classList.remove('hidden');
+      document.getElementById('question').classList.add('hidden');
+      document.getElementById('answerBtns').classList.add('hidden');
+      document.getElementById('guessArea').classList.add('hidden');
+      document.getElementById('turn').classList.add('hidden');
+      if (twoPState === "input1") {
+        document.getElementById('inputArea').innerHTML = `<b>Player 1:</b> Enter your celebrity (Player 2, look away!)<br>
+          <input type="text" id="celeb1" placeholder="Your celebrity...">
+          <button onclick="submitCeleb(0)">OK</button>`;
+      } else if (twoPState === "input2") {
+        document.getElementById('inputArea').innerHTML = `<b>Player 2:</b> Enter your celebrity (Player 1, look away!)<br>
+          <input type="text" id="celeb2" placeholder="Your celebrity...">
+          <button onclick="submitCeleb(1)">OK</button>`;
+      }
+    }
+    function submitCeleb(player) {
+      let val = document.getElementById(player === 0 ? "celeb1" : "celeb2").value.trim();
+      if (!val) return;
+      playerCelebs[player] = val;
+      if (player === 0) {
+        twoPState = "input2";
+        showPlayerInput();
+      } else {
+        twoPState = "play";
+        currentPlayer = 0;
+        otherPlayer = 1;
+        showTwoPPlay();
+      }
+    }
+    function showTwoPPlay() {
+      document.getElementById('inputArea').classList.add('hidden');
+      document.getElementById('question').classList.remove('hidden');
+      document.getElementById('answerBtns').classList.remove('hidden');
+      document.getElementById('guessArea').classList.remove('hidden');
+      document.getElementById('turn').classList.remove('hidden');
+      document.getElementById('result').classList.add('hidden');
+      document.getElementById('turn').innerHTML = `<b>${playerNames[currentPlayer]}'s turn</b> (ask a yes/no question or guess)`;
+      document.getElementById('question').innerHTML = "Ask your question out loud, then click Yes or No based on the other player's answer.";
+      document.getElementById('guessInput').value = "";
+    }
+    function makeGuess() {
+      let guess = document.getElementById('guessInput').value.trim();
+      if (!guess) return;
+      if (guess.toLowerCase() === playerCelebs[otherPlayer].toLowerCase()) {
+        document.getElementById('result').classList.remove('hidden');
+        document.getElementById('result').innerHTML = `<b>${playerNames[currentPlayer]} wins!</b> The celebrity was <b>${playerCelebs[otherPlayer]}</b>.<br><br>
+          <button onclick='location.reload()'>Play Again</button>`;
+        document.getElementById('question').classList.add('hidden');
+        document.getElementById('answerBtns').classList.add('hidden');
+        document.getElementById('guessArea').classList.add('hidden');
+        document.getElementById('turn').classList.add('hidden');
+        twoPGuessed = true;
+      } else {
+        alert("Incorrect guess! Turn passes to the other player.");
+        // Switch turn
+        currentPlayer = 1 - currentPlayer;
+        otherPlayer = 1 - otherPlayer;
+        showTwoPPlay();
+      }
+    }
+  </script>
+</body>
+</html>
